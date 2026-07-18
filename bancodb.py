@@ -1,151 +1,140 @@
-import os 
+import os
 import time
 import shutil
 
+from dotenv import load_dotenv, find_dotenv
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from dotenv import load_dotenv, find_dotenv 
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma.vectorstores import Chroma
-from langchain.chains import RetrievalQA
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
 
+# Configurações Globais
 PASTA_BASE = 'base'
-PASTA_DB = "db_google"
+PASTA_DB = "Filtro_db"
 
-# Carrega as variáveis de ambiente do arquivo .env
 load_dotenv(find_dotenv())
 AIMLAPI_KEY = os.getenv("AIMLAPI_KEY")
 
-# Mensagem de depuração para verificar se a chave foi carregada
 if not AIMLAPI_KEY:
-    print("AVISO: A variável de ambiente AIMLAPI_KEY não foi encontrada.")
-    print("Certifique-se de que você tem um arquivo .env no mesmo diretório com o conteúdo: AIMLAPI_KEY='sua_chave_aqui'")
+    print("ALERTA: Variável AIMLAPI_KEY ausente do escopo de ambiente.")
 else:
-    print("DEBUG: Chave AIMLAPI_KEY carregada com sucesso.")
+    print("DEBUG: Credencial AIMLAPI_KEY alocada em memória.")
 
+# --- MÓDULO DE INGESTÃO E VETORIZAÇÃO ---
 
-def criar_banco_de_dados():
-   """
-   Carrega os documentos PDF, divide-os em chunks e os vetoriza,
-   salvando em um banco de dados vetorial Chroma.
-   """
-   print("Iniciando a criação do banco de dados vetorial...")
-   documentos = carregar_documentos()
-   if not documentos:
-       print("Nenhum documento PDF encontrado na pasta 'base'. O banco de dados não será criado.")
-       return
-   chunks = dividir_chunks(documentos)
-   vetorizar_chunks(chunks)
-   
 def carregar_documentos():
-    """Carrega os arquivos PDF da pasta especificada."""
-    print(f"Carregando documentos da pasta: '{PASTA_BASE}'")
+    """Extrai os artefatos PDF do diretório estipulado."""
+    print(f"Inspecionando diretório: '{PASTA_BASE}'")
     carregador = PyPDFDirectoryLoader(PASTA_BASE, glob='*.pdf')
     try:
         documentos = carregador.load()
-        print(f"Encontrados {len(documentos)} documento(s).")
+        print(f"Inventário concluído: {len(documentos)} artefato(s) detectado(s).")
         return documentos
-    except Exception as e:
-        print(f"ERRO ao carregar documentos: {e}")
+    except Exception as anomalia:
+        print(f"Falha na extração de dados: {anomalia}")
         return []
 
-
 def dividir_chunks(documentos):
- """Divide os documentos em chunks menores."""
- print("Dividindo documentos em chunks...")
- separador_documentos = RecursiveCharacterTextSplitter( 
-    chunk_size = 1000,
-    chunk_overlap = 200, # Reduzi o overlap para um valor mais comum
-    length_function = len,
-    add_start_index = True
- )
- chunks = separador_documentos.split_documents(documentos)
- print(f"Documentos divididos em {len(chunks)} chunks.")
- return chunks
+    """Fragmenta os artefatos documentais em porções textuais (chunks)."""
+    print("Segmentando a base de conhecimento...")
+    separador = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len,
+        add_start_index=True
+    )
+    chunks = separador.split_documents(documentos)
+    print(f"Fragmentação concluída: {len(chunks)} blocos gerados.")
+    return chunks
 
 def vetorizar_chunks(chunks):
-    """Vetoriza os chunks usando um modelo local e os salva no ChromaDB."""
-    print(f"Iniciando a vetorização de {len(chunks)} chunks usando Sentence Transformers...")
-    start_time = time.time()
-
+    """Calcula os embeddings e persiste as matrizes no ChromaDB."""
+    print(f"Iniciando projeção vetorial de {len(chunks)} matrizes...")
+    
     try:
-        # Modelo de embedding que será executado localmente
-        embedding_hf = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        
-        # Remove o diretório do banco de dados antigo se ele existir
+        inicio = time.time()
+        funcao_embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         if os.path.exists(PASTA_DB):
-            print(f"Removendo banco de dados antigo em '{PASTA_DB}'...")
+            print(f"Purgando persistência vetorial obsoleta em '{PASTA_DB}'...")
             shutil.rmtree(PASTA_DB)
 
-        # Cria e persiste o novo banco de dados
-        print(f"Criando e persistindo o banco de dados em '{PASTA_DB}'...")
-        db = Chroma.from_documents(
+        print(f"Consolidando novo repositório em '{PASTA_DB}'...")
+        Chroma.from_documents(
             chunks,
-            embedding=embedding_hf,
+            embedding=funcao_embedding,
             persist_directory=PASTA_DB
         )
+        print(f"✅ Projeção e persistência finalizadas em {time.time() - inicio:.2f} s.\n"
+             "Execute python main.py --chat "
+              )
+    except Exception as anomalia:
+        print(f"Ruptura durante a vetorização: {anomalia}")
+    
+def criar_banco_de_dados():
+    """Orquestra o pipeline de ETL (Extração, Transformação e Carga)."""
+    print("Inicializando pipeline de indexação vetorial...")
+    inicio = time.time()
+    documentos = carregar_documentos()
+    if not documentos:
+        print("Execução abortada: Acervo documental incipiente.")
+        return
+    chunks = dividir_chunks(documentos)
+    vetorizar_chunks(chunks)
+    fim = time.time()
+    print (f"Time {time.time() - inicio:.2f} s")
 
-        end_time = time.time()
-        print(f"✅ Vetorização e criação do DB concluídas em {end_time - start_time:.2f} segundos.")
+# --- MÓDULO DE INFERÊNCIA E RETRIEVAL ---
 
-    except Exception as e:
-        print(f"ERRO durante a vetorização ou criação do DB: {e}")
+def configurar_infraestrutura_rag():
+    inicio = time.time()
+    """Instancia o banco vetorial, a topologia do LLM e a cadeia RAG LCEL."""
+    if not os.path.exists(PASTA_DB):
+        raise FileNotFoundError(f"Repositório '{PASTA_DB}' inacessível. \n"
+                                f"Execute python main.py --create-db  \nTime {time.time() - inicio:.2f} s")
+
+    print("Carregando espaço latente (HuggingFace)...")
+    funcao_embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    banco_vetorial = Chroma(persist_directory=PASTA_DB, embedding_function=funcao_embedding)
+    
+    print(f"Instanciando cliente de inferência (AIMLAPI)...")
+    cliente_llm = ChatOpenAI(
+        api_key=AIMLAPI_KEY,
+        base_url="https://api.aimlapi.com",
+        model="mistralai/Mistral-7B-Instruct-v0.2",
+        temperature=0.3
+    )
+
+    # Transição para o paradigma LCEL (LangChain Expression Language)
+    retriever = banco_vetorial.as_retriever(search_kwargs={'k': 5})
+    
+    # O paradigma atual exige um prompt estruturado para injetar o contexto recuperado
+    prompt_contextual = ChatPromptTemplate.from_messages([
+        ("system", "Atue como um analista de dados preciso. Responda à inquirição utilizando exclusivamente o contexto fornecido.\n\nContexto:\n{context}"),
+        ("human", "{input}"),
+    ])
+    
+    matriz_documentos = create_stuff_documents_chain(cliente_llm, prompt_contextual)
+    matriz_rag = create_retrieval_chain(retriever, matriz_documentos)
+    fim = time.time()
+    print (f"Time {time.time() - inicio:.2f} s")
+    return matriz_rag
 
 
 def iniciar_chat():
-    """Inicia o chat interativo com o modelo de linguagem."""
-    print("\nIniciando o sistema de chat...")
-
-    # 1. Verifica se o banco de dados vetorial existe
-    if not os.path.exists(PASTA_DB):
-        print(f"ERRO: Banco de dados '{PASTA_DB}' não encontrado.")
-        print("Por favor, execute o script com o argumento '--create-db' primeiro.")
-        return
-
-    # 2. Carrega o banco de dados vetorial e a função de embedding
-    print("Carregando base de vetores (usando Sentence Transformers)...")
+    """Orquestra o laço interativo de transações conversacionais."""
+    inicio = time.time()
+    print("Inicializando interface terminal do RAG...")
     try:
-        embedding_hf = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        db = Chroma(persist_directory=PASTA_DB, embedding_function=embedding_hf)
-        print("Base de dados carregada com sucesso!")
-    except Exception as e:
-        print(f"ERRO ao carregar banco de dados ou embeddings: {e}")
+        matriz_rag = configurar_infraestrutura_rag()
+    except Exception as anomalia:
+        print(f"Ruptura fatal na topologia da aplicação: {anomalia}")
         return
 
-    # 3. Configura a conexão com a API (AIMLAPI)
-    try:
-        print("Configurando a conexão com a AIMLAPI...")
-        aimlapi_base_url = "https://api.aimlapi.com"
-        aimlapi_model = "mistralai/Mistral-7B-Instruct-v0.2"
-
-        
-        # As versões mais recentes do LangChain usam 'api_key', 'base_url' e 'model'
-        aimlapi_model = "mistralai/Mistral-7B-Instruct-v0.2" # Verifique o nome do modelo
-
-        llm = ChatOpenAI(
-            api_key=AIMLAPI_KEY,
-            base_url=aimlapi_base_url,
-            model=aimlapi_model,
-            temperature=0.3
-        )
-        print(f" Conexão com AIMLAPI (modelo '{aimlapi_model}') estabelecida!")
-
-    except Exception as e:
-        print(f"ERRO FATAL ao configurar a conexão com a API: {e}")
-        return
-
-    # 4. Cria a cadeia de Pergunta e Resposta (QA Chain)
-    retriever = db.as_retriever(search_kwargs={'k': 5})
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True # Opcional: para ver os documentos fonte
-    )
-
-    # 5. Inicia o loop de chat
-    print("\n🚀 Sistema pronto! Faça sua pergunta ou digite 'sair' para terminar.")
+    print("\n🚀 Chat: Digite Sua Pergunta (ou 'sair').")
     while True:
         query = input("\n> ")
         if query.lower() in ('sair', 'exit', 'quit'):
@@ -154,14 +143,17 @@ def iniciar_chat():
             continue
 
         try:
-            print("\n🧠 Pensando...")
-            start = time.time()
-            result = qa_chain.invoke({"query": query})
-            end = time.time()
+            print("\n🧠 Computando inferência...")
+           
+            
+            # LCEL: argumento primário é 'input', e o retorno reside em 'answer'
+            resultado = matriz_rag.invoke({"input": query})
+          
+            
+            print("\nResposta Sistêmica:")
+            print(resultado.get("answer", "Inconsistência topológica: O modelo não propagou tensores de resposta."))
+            print(f"\n(Tempo computacional: {time.time() - inicio:.2f} s)")
 
-            print("\nResposta:")
-            print(result.get("result", "Nenhuma resposta recebida da API."))
-            print(f"\n(Tempo de resposta: {end - start:.2f} segundos)")
-
-        except Exception as e:
-            print(f"Ocorreu um erro durante a consulta à API: {e}")
+        except Exception as anomalia:
+            print(f"Colapso durante a transação de rede: {anomalia}")
+    fim = timi.time()
