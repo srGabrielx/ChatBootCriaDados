@@ -90,21 +90,22 @@ def criar_banco_de_dados():
 # --- MÓDULO DE INFERÊNCIA E RETRIEVAL ---
 
 def configurar_infraestrutura_rag():
-    inicio = time.time()
     """Instancia o banco vetorial, a topologia do LLM e a cadeia RAG LCEL."""
+    inicio = time.time()
+    
     if not os.path.exists(PASTA_DB):
         raise FileNotFoundError(f"Repositório '{PASTA_DB}' inacessível. \n"
-                                f"Execute python main.py --create-db  \nTime {time.time() - inicio:.2f} s")
+                                f"Execute python main.py --create-db  \nTempo de falha: {time.time() - inicio:.2f} s")
 
     print("Carregando espaço latente (HuggingFace)...")
     funcao_embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     banco_vetorial = Chroma(persist_directory=PASTA_DB, embedding_function=funcao_embedding)
     
-    print(f"Instanciando cliente de inferência (AIMLAPI)...")
+    print("Instanciando cliente de inferência (AIMLAPI)...")
     cliente_llm = ChatOpenAI(
         api_key=AIMLAPI_KEY,
-        base_url="https://api.aimlapi.com",
-        model="mistralai/Mistral-7B-Instruct-v0.2",
+        base_url="https://api.aimlapi.com/v1",
+      model="gpt-4.1-mini",
         temperature=0.3
     )
 
@@ -113,14 +114,15 @@ def configurar_infraestrutura_rag():
     
     # O paradigma atual exige um prompt estruturado para injetar o contexto recuperado
     prompt_contextual = ChatPromptTemplate.from_messages([
-        ("system", "Atue como um analista de dados preciso. Responda à inquirição utilizando exclusivamente o contexto fornecido.\n\nContexto:\n{context}"),
+        ("assistant", "Atue como um analista de dados preciso. Responda à inquirição utilizando exclusivamente o contexto fornecido.\n\nContexto:\n{context}"),
         ("human", "{input}"),
     ])
     
     matriz_documentos = create_stuff_documents_chain(cliente_llm, prompt_contextual)
     matriz_rag = create_retrieval_chain(retriever, matriz_documentos)
-    fim = time.time()
-    print (f"Time {time.time() - inicio:.2f} s")
+    
+    # Otimização: Remoção da variável 'fim' que não estava sendo utilizada
+    print(f"Infraestrutura inicializada em {time.time() - inicio:.2f} s")
     return matriz_rag
 
 
