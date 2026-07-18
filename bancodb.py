@@ -156,4 +156,4 @@ def iniciar_chat():
 
         except Exception as anomalia:
             print(f"Colapso durante a transação de rede: {anomalia}")
-    fim = timi.time()
+    fim = time.time()
